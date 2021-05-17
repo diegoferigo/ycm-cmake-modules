@@ -1,0 +1,13 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [
+    "setuptools>=45",
+    "wheel",
+    "setuptools_scm[toml]>=6.0",
+    "cmake-build-extension",
+    "cmake>=3.12",
+    "ninja",
+]
+
+[tool.setuptools_scm]
+local_scheme = "dirty-tag"
