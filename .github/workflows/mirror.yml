@@ -1,0 +1,82 @@
+name: Mirror Upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Execute a weekly alignment on Monday at 2AM UTC
+    - cron: '0 2 * * 1'
+
+jobs:
+
+  update-mirror:
+    name: Sync with upstream
+    runs-on: ubuntu-latest
+    if: github.repository == 'diegoferigo/ycm-cmake-modules'
+    env:
+      UPSTREAM: https://github.com/robotology/ycm
+      # Note: token must have 'repo' and 'workflow' scopes
+      MIRROR: https://${{ secrets.TOKEN_MIRROR }}@github.com/diegoferigo/ycm-cmake-modules
+      MIRROR_BRANCH_WHITELIST: "pypi feature/**"
+
+    steps:
+
+    - name: Inspect Environment
+      run: |
+        env | grep ^GITHUB
+        echo
+        cat ${GITHUB_EVENT_PATH}
+        echo
+        env
+
+    - name: Clone upstream
+      run: git clone --mirror $UPSTREAM upstream/.git
+
+    # https://stackoverflow.com/a/47778529
+    - name: Remove refs/pull branches
+      working-directory: upstream/
+      run: git for-each-ref --format 'delete %(refname)' refs/pull | git update-ref --stdin
+
+    - name: Add mirror remote
+      working-directory: upstream/
+      run: git remote add mirror $MIRROR
+
+    - name: Un-bare repo
+      working-directory: upstream/
+      run: git config --unset core.bare
+
+    - name: Inspect git repo
+      working-directory: upstream/
+      run: |
+        git branch -av
+        git remote -v
+
+    - name: Check whitelist
+      id: check_whitelist
+      run: echo "::set-output name=has_whitelist::${MIRROR_BRANCH_WHITELIST:+true}"
+
+    - name: Mirror branch whitelist
+      if: steps.check_whitelist.outputs.has_whitelist == 'true'
+      working-directory: upstream/
+      run: |
+        git fetch mirror
+        # https://stackoverflow.com/a/1856506
+        git config remote.origin.fetch :
+        declare -a whitelist_array=( $MIRROR_BRANCH_WHITELIST )
+        for pattern in ${whitelist_array[@]} ; do
+          for ref in $(git for-each-ref --format '%(refname)' "**/remotes/mirror/$pattern") ; do
+            git checkout ${ref#refs/remotes/mirror/}
+            echo
+          done
+        done
+        git checkout $(git remote show origin | awk '/HEAD branch/ {print $NF}')
+
+    - name: Inspect git repo
+      working-directory: upstream/
+      run: |
+        git branch -av
+        echo
+        git remote -v
+
+    - name: Push to the mirror
+      working-directory: upstream/
+      run: git push --mirror mirror
